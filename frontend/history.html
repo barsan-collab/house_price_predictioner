@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="View past house price predictions with detailed property information and estimated values.">
+    <title>Prediction History — House Price Predictor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
+</head>
+<body>
+    <!-- Grid background overlay -->
+    <div class="bg-grid"></div>
+    <div id="toast-container" class="toast-container"></div>
+
+    <div class="history-container">
+        <!-- Header -->
+        <div class="history-header stagger-item">
+            <div>
+                <h1>📊 Prediction History</h1>
+                <p class="history-count">
+                    {% if predictions %}
+                        {{ predictions|length }} prediction{{ 's' if predictions|length != 1 else '' }} found
+                    {% else %}
+                        No predictions recorded yet
+                    {% endif %}
+                </p>
+            </div>
+            <nav class="nav-bar" style="margin-bottom: 0;">
+                <a href="/" class="nav-link" id="nav-home-hist">
+                    <span>🏠</span> Predictor
+                </a>
+                <a href="/history" class="nav-link active" id="nav-history-hist">
+                    <span>📊</span> History
+                </a>
+                <a href="/compare" class="nav-link" id="nav-compare-hist">
+                    <span>⚖️</span> Compare
+                </a>
+            </nav>
+        </div>
+
+        {% if not db_available %}
+        <div class="alert alert-warning stagger-item">
+            ⚠️ Database is currently offline. History data may be unavailable.
+        </div>
+        {% endif %}
+
+        {% if predictions %}
+            <!-- Desktop Table View -->
+            <div class="history-table-wrapper stagger-item">
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>Location</th>
+                            <th>Area</th>
+                            <th>Configuration</th>
+                            <th>Estimated Price</th>
+                            <th>Predicted At</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in predictions %}
+                        <tr>
+                            <td>
+                                <strong>{{ item.location }}</strong>
+                            </td>
+                            <td>
+                                {{ "{:,.0f}".format(item.area) }} ft²
+                            </td>
+                            <td>
+                                <div class="config-cell">
+                                    <span class="config-tag">🛏️ {{ item.bedrooms }}</span>
+                                    <span class="config-tag">🚿 {{ item.bathrooms }}</span>
+                                </div>
+                            </td>
+                            <td class="price-cell">
+                                {{ item.formatted_price }}
+                            </td>
+                            <td class="time-cell">
+                                {{ item.timestamp }}
+                            </td>
+                            <td>
+                                <button class="btn-add-compare" style="margin-top:0; padding: 4px 10px;" onclick='addToCompare({"formatted_price": "{{ item.formatted_price }}", "predicted_price": {{ item.predicted_price }}, "inputs": {"area": {{ item.area }}, "bedrooms": {{ item.bedrooms }}, "bathrooms": {{ item.bathrooms }}, "location": "{{ item.location }}"}})'>Compare</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Mobile Card View -->
+            <div class="history-cards">
+                {% for item in predictions %}
+                <div class="history-card stagger-item">
+                    <div class="history-card-header">
+                        <span class="history-card-location">📍 {{ item.location }}</span>
+                        <span class="history-card-price">{{ item.formatted_price }}</span>
+                    </div>
+                    <div class="history-card-meta">
+                        <span class="config-tag">📐 {{ "{:,.0f}".format(item.area) }} ft²</span>
+                        <span class="config-tag">🛏️ {{ item.bedrooms }} Beds</span>
+                        <span class="config-tag">🚿 {{ item.bathrooms }} Baths</span>
+                    </div>
+                    <div class="history-card-time">{{ item.timestamp }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <!-- Empty State -->
+            <div class="empty-state stagger-item">
+                <div class="empty-state-icon">🔍</div>
+                <h3>No predictions yet</h3>
+                <p>Go to the predictor and make your first property valuation!</p>
+                <a href="/" class="nav-link" style="margin-top: 20px; display: inline-flex;">
+                    <span>🏠</span> Make a Prediction
+                </a>
+            </div>
+        {% endif %}
+
+        <!-- Footer -->
+        <footer class="app-footer stagger-item">
+            <p>Built with Flask + scikit-learn + MongoDB</p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script>
+        // Stagger reveal animation
+        (function () {
+            const elements = document.querySelectorAll('.stagger-item');
+            elements.forEach((el, i) => {
+                el.style.opacity = '0';
+                el.style.transform = 'translateY(20px)';
+                el.style.transition = `opacity 0.5s ease ${i * 0.08}s, transform 0.5s ease ${i * 0.08}s`;
+                requestAnimationFrame(() => {
+                    el.style.opacity = '1';
+                    el.style.transform = 'translateY(0)';
+                });
+            });
+        })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Get instant ML-powered property price estimates. Enter property details and our trained machine learning model predicts the market value.">
+    <title>House Price Predictor — ML-Powered Valuation</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+</head>
+<body>
+    <!-- Grid background overlay -->
+    <div class="bg-grid"></div>
+
+    <!-- Toast notification container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <div class="dashboard-layout">
+        <!-- SIDEBAR -->
+        <aside class="dashboard-sidebar stagger-item">
+            <header class="app-header">
+                <span class="app-logo">🏠</span>
+                <h1>House Price Predictor</h1>
+                <p class="subtitle">Enter property details to get an instant ML-powered market valuation.</p>
+            </header>
+
+            <nav class="nav-bar">
+                <a href="/" class="nav-link active" id="nav-home">
+                    <span>🏠</span> Predictor
+                </a>
+                <a href="/history" class="nav-link" id="nav-history">
+                    <span>📊</span> History
+                </a>
+            </nav>
+
+            <div class="status-bar">
+                {% if model_available %}
+                <span class="status-badge online"><span class="status-dot"></span> Model Ready</span>
+                {% else %}
+                <span class="status-badge offline"><span class="status-dot"></span> Model Unavailable</span>
+                {% endif %}
+
+                {% if db_available %}
+                <span class="status-badge online"><span class="status-dot"></span> DB Connected</span>
+                {% else %}
+                <span class="status-badge warning"><span class="status-dot"></span> DB Offline</span>
+                {% endif %}
+            </div>
+
+            <div class="quick-stats">
+                <div class="stat-card">
+                    <div class="stat-icon">🏙️</div>
+                    <div class="stat-value">7900+</div>
+                    <div class="stat-label">Locations</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">🧠</div>
+                    <div class="stat-value">14K+</div>
+                    <div class="stat-label">Data Points</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">⚡</div>
+                    <div class="stat-value">&lt;1s</div>
+                    <div class="stat-label">Speed</div>
+                </div>
+            </div>
+
+            <footer class="app-footer">
+                <p>Built with Flask + scikit-learn + MongoDB</p>
+                <p style="margin-top: 4px;">Press <kbd class="kbd-shortcut">Ctrl + Enter</kbd> to predict</p>
+            </footer>
+        </aside>
+
+        <!-- MAIN CONTENT (FORM + MAP) -->
+        <main class="dashboard-main stagger-item">
+            <!-- Alerts (server-side fallback) -->
+            {% if not model_available %}
+            <div class="alert alert-danger">
+                ⚠️ Prediction model is currently unavailable. Please run <code>python train_model.py</code> and restart the server.
+            </div>
+            {% endif %}
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        {% if category == 'error' %}
+                            <div class="alert alert-danger">❌ {{ message }}</div>
+                        {% elif category == 'warning' %}
+                            <div class="alert alert-warning">⚠️ {{ message }}</div>
+                        {% elif category == 'prediction' %}
+                            <div class="alert alert-success">🏠 Prediction Successful! (See right panel)</div>
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <section class="form-section">
+                <h2 class="form-section-title">📋 Property Details</h2>
+                <p class="form-section-desc">Fill in the details below or select a location on the map.</p>
+
+                <form action="/predict" method="POST" id="prediction-form">
+                    <div class="form-group">
+                        <label for="location">Location / City</label>
+                        <div id="map" class="map-container"></div>
+                        <input list="location-options" id="location" name="location" placeholder="e.g. Chennai, India" required>
+                        <datalist id="location-options">
+                            {% for loc in locations %}
+                            <option value="{{ loc }}"></option>
+                            {% endfor %}
+                            {% if not locations %}
+                            <option value="Bangalore"></option>
+                            <option value="Pune"></option>
+                            <option value="New Delhi"></option>
+                            <option value="Chennai"></option>
+                            <option value="Kolkata"></option>
+                            <option value="Mumbai"></option>
+                            <option value="Hyderabad"></option>
+                            <option value="Thane"></option>
+                            {% endif %}
+                        </datalist>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="area">Total Area (sq. ft.)</label>
+                            <input type="number" step="any" min="1" max="1000000" id="area" name="area" placeholder="e.g. 1500" required>
+                            <span class="input-hint" id="area-hint"></span>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="bedrooms">Bedrooms</label>
+                            <div class="range-container">
+                                <input type="range" id="bedrooms" name="bedrooms" min="1" max="10" value="3">
+                                <span class="range-value" id="bedrooms-value">3</span>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="bathrooms">Bathrooms</label>
+                            <div class="range-container">
+                                <input type="range" id="bathrooms" name="bathrooms" min="1" max="10" value="2">
+                                <span class="range-value" id="bathrooms-value">2</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="submit-btn" id="submit-btn">
+                        <span class="btn-spinner"></span>
+                        <span class="btn-text">Predict Price</span>
+                    </button>
+                </form>
+            </section>
+        </main>
+
+        <!-- RIGHT PANEL (RESULTS & COMPARE) -->
+        <aside class="dashboard-right stagger-item">
+            <div id="result-container">
+                <div class="empty-state panel-empty-state">
+                    <div class="empty-state-icon">📊</div>
+                    <h3>No Prediction Yet</h3>
+                    <p>Enter property details on the left to get a valuation.</p>
+                </div>
+            </div>
+
+            <div class="comparison-section">
+                <h3 class="comparison-title">Compare Properties</h3>
+                <div id="comparison-container">
+                    <p class="text-muted comparison-empty">Add properties from the results to compare them side-by-side.</p>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    
+    <!-- Leaflet Map Initialization and Reverse Geocoding -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const map = L.map('map').setView([20.5937, 78.9629], 5);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+
+            let marker = null;
+            const locationInput = document.getElementById('location');
+
+            map.on('click', function(e) {
+                const lat = e.latlng.lat;
+                const lon = e.latlng.lng;
+
+                if (marker) {
+                    marker.setLatLng(e.latlng);
+                } else {
+                    marker = L.marker(e.latlng).addTo(map);
+                }
+
+                const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`;
+                
+                fetch(url)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data && data.address) {
+                            const address = data.address;
+                            const cityName = address.city || address.town || address.village || address.county || address.state_district || address.state;
+                            
+                            if (cityName) {
+                                locationInput.value = cityName;
+                                locationInput.style.transition = 'background-color 0.3s ease';
+                                locationInput.style.backgroundColor = 'rgba(16, 185, 129, 0.2)';
+                                setTimeout(() => {
+                                    locationInput.style.backgroundColor = '';
+                                }, 500);
+                            } else {
+                                console.warn('Could not extract a specific city name from the location data.');
+                            }
+                        }
+                    })
+                    .catch(err => console.error('Reverse geocoding failed:', err));
+            });
+        });
+    </script>
+</body>
+</html>

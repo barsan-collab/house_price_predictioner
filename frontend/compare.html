@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compare Properties — ML Valuation</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
+    <style>
+        .matrix-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+        .matrix-table th, .matrix-table td {
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+        }
+        .matrix-table th:first-child, .matrix-table td:first-child {
+            text-align: left;
+            font-weight: 700;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            background: rgba(15, 23, 42, 0.4);
+            border-right: 1px solid rgba(148, 163, 184, 0.1);
+            position: sticky;
+            left: 0;
+        }
+        .matrix-table thead th {
+            background: rgba(99, 102, 241, 0.08);
+            color: var(--text-primary);
+            font-size: 1rem;
+        }
+        .matrix-table tbody tr:hover {
+            background: rgba(99, 102, 241, 0.03);
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-grid"></div>
+    <div id="toast-container" class="toast-container"></div>
+    
+    <div class="dashboard-layout" style="grid-template-columns: 280px 1fr;">
+        <!-- SIDEBAR -->
+        <aside class="dashboard-sidebar stagger-item">
+            <header class="app-header">
+                <span class="app-logo">🏠</span>
+                <h1>House Price Predictor</h1>
+            </header>
+
+            <nav class="nav-bar">
+                <a href="/" class="nav-link" id="nav-home">
+                    <span>🏠</span> Predictor
+                </a>
+                <a href="/history" class="nav-link" id="nav-history">
+                    <span>📊</span> History
+                </a>
+                <a href="/compare" class="nav-link active" id="nav-compare">
+                    <span>⚖️</span> Compare
+                </a>
+            </nav>
+
+            <div class="status-bar">
+                {% if db_available %}
+                <span class="status-badge online"><span class="status-dot"></span> DB Connected</span>
+                {% else %}
+                <span class="status-badge warning"><span class="status-dot"></span> DB Offline</span>
+                {% endif %}
+            </div>
+
+            <footer class="app-footer" style="margin-top:auto;">
+                <p>Built with Flask + scikit-learn + MongoDB</p>
+            </footer>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <main class="dashboard-main stagger-item" style="padding-right: 24px;">
+            <div class="history-header" style="margin-bottom: 24px;">
+                <h1>Property Comparison Matrix</h1>
+                <p class="history-count">Compare up to 4 selected properties side-by-side.</p>
+            </div>
+            
+            <div id="matrix-container" class="history-table-wrapper" style="padding: 0; min-height: 400px; display: flex; flex-direction: column; overflow-x: auto;">
+                <!-- JS will render matrix here -->
+            </div>
+        </main>
+    </div>
+    
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            renderMatrix();
+            // Listen for cross-tab localstorage changes
+            window.addEventListener('storage', (e) => {
+                if (e.key === 'compareList') renderMatrix();
+            });
+        });
+
+        function renderMatrix() {
+            const matrixContainer = document.getElementById('matrix-container');
+            let compareList = [];
+            try {
+                const stored = localStorage.getItem('compareList');
+                if (stored) compareList = JSON.parse(stored);
+            } catch(e) {}
+
+            if (!compareList || compareList.length === 0) {
+                matrixContainer.innerHTML = `
+                    <div class="empty-state" style="margin: auto;">
+                        <div class="empty-state-icon">⚖️</div>
+                        <h3>No Properties Selected</h3>
+                        <p>Go to the Predictor or History page and click "Add to Compare" on properties you want to contrast.</p>
+                        <a href="/" class="submit-btn" style="display:inline-block; margin-top: 16px; width:auto; text-decoration:none;">Go to Predictor</a>
+                    </div>
+                `;
+                return;
+            }
+
+            // Build Matrix Table
+            let html = `
+                <table class="matrix-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 20%;">Metric</th>
+                            ${compareList.map((p, i) => `
+                                <th>
+                                    Property ${i + 1} 
+                                    <button class="compare-remove" style="position:relative;top:0;right:0;display:inline-flex;margin-left:8px;vertical-align:middle;" onclick="removeMatrixItem('${p.id}')">✕</button>
+                                </th>
+                            `).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Location</td>
+                            ${compareList.map(p => `<td><strong style="color:var(--text-primary);">${p.inputs.location}</strong></td>`).join('')}
+                        </tr>
+                        <tr>
+                            <td>Total Price</td>
+                            ${compareList.map(p => `<td class="price-cell" style="font-size:1.4rem;">${p.formatted_price}</td>`).join('')}
+                        </tr>
+                        <tr>
+                            <td>Area (sq.ft)</td>
+                            ${compareList.map(p => `<td><span style="font-family:var(--font-mono);">${Number(p.inputs.area).toLocaleString()}</span></td>`).join('')}
+                        </tr>
+                        <tr>
+                            <td>Bedrooms</td>
+                            ${compareList.map(p => `<td>${p.inputs.bedrooms}</td>`).join('')}
+                        </tr>
+                        <tr>
+                            <td>Bathrooms</td>
+                            ${compareList.map(p => `<td>${p.inputs.bathrooms}</td>`).join('')}
+                        </tr>
+                        <tr>
+                            <td>Price / sq.ft</td>
+                            ${compareList.map(p => {
+                                let psqft = 0;
+                                if (p.predicted_price && p.inputs.area > 0) {
+                                    psqft = Math.round(p.predicted_price / p.inputs.area);
+                                }
+                                return `<td><span class="config-tag">₹${psqft.toLocaleString('en-IN')}/sq.ft</span></td>`;
+                            }).join('')}
+                        </tr>
+                    </tbody>
+                </table>
+            `;
+            matrixContainer.innerHTML = html;
+        }
+
+        window.removeMatrixItem = function(id) {
+            let compareList = [];
+            try {
+                const stored = localStorage.getItem('compareList');
+                if (stored) compareList = JSON.parse(stored);
+            } catch(e) {}
+            
+            compareList = compareList.filter(item => item.id !== id);
+            localStorage.setItem('compareList', JSON.stringify(compareList));
+            
+            renderMatrix();
+        }
+    </script>
+</body>
+</html>

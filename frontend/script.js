@@ -1,10 +1,11 @@
 /**
- * script.js — House Price Predictor v2.0
- * ─────────────────────────────────────────
+ * script.js — House Price Predictor v2.0 (Updated & Enhanced)
+ * ─────────────────────────────────────────────────────────────
  * Handles:
- *  • AJAX form submission via fetch() with JSON
- *  • Custom numeric stepper buttons (area / bedrooms / bathrooms)
- *  • Keyboard arrow-key increment/decrement for number inputs
+ *  • Global screen loading overlay control (page load & backend ops)
+ *  • AJAX form submission with PRG pattern state cleanups
+ *  • Touch & responsive-friendly numeric stepper controls
+ *  • Keyboard navigation & arrow-key increment/decrement
  *  • Balcony field inclusion in prediction payload
  *  • Toast notification system
  *  • Dynamic result card rendering with animated price counter
@@ -17,31 +18,31 @@
     'use strict';
 
     // ====================================================================
-    // DOM References
+    // DOM REFERENCES
     // ====================================================================
-    const predictionForm     = document.getElementById('prediction-form');
-    const submitBtn          = document.getElementById('submit-btn');
-    const btnText            = submitBtn?.querySelector('.btn-text');
-    const btnSpinner         = submitBtn?.querySelector('.btn-spinner');
-    const btnIcon            = submitBtn?.querySelector('.btn-icon');
-    const btnArrow           = submitBtn?.querySelector('.btn-arrow');
-    const resultContainer    = document.getElementById('result-container');
-    const toastContainer     = document.getElementById('toast-container');
+    const predictionForm    = document.getElementById('prediction-form');
+    const submitBtn         = document.getElementById('submit-btn');
+    const btnText           = submitBtn?.querySelector('.btn-text');
+    const btnSpinner        = submitBtn?.querySelector('.btn-spinner');
+    const btnIcon           = submitBtn?.querySelector('.btn-icon');
+    const btnArrow          = submitBtn?.querySelector('.btn-arrow');
+    const resultContainer   = document.getElementById('result-container');
+    const toastContainer    = document.getElementById('toast-container');
 
-    const areaInput          = document.getElementById('area');
-    const bedroomsInput      = document.getElementById('bedrooms');
-    const bathroomsInput     = document.getElementById('bathrooms');
-    const locationInput      = document.getElementById('location');
+    const areaInput         = document.getElementById('area');
+    const bedroomsInput     = document.getElementById('bedrooms');
+    const bathroomsInput    = document.getElementById('bathrooms');
+    const locationInput     = document.getElementById('location');
 
     // Stepper buttons
-    const areaDecBtn         = document.getElementById('area-dec');
-    const areaIncBtn         = document.getElementById('area-inc');
-    const bedsDecBtn         = document.getElementById('beds-dec');
-    const bedsIncBtn         = document.getElementById('beds-inc');
-    const bathsDecBtn        = document.getElementById('baths-dec');
-    const bathsIncBtn        = document.getElementById('baths-inc');
+    const areaDecBtn        = document.getElementById('area-dec');
+    const areaIncBtn        = document.getElementById('area-inc');
+    const bedsDecBtn        = document.getElementById('beds-dec');
+    const bedsIncBtn        = document.getElementById('beds-inc');
+    const bathsDecBtn       = document.getElementById('baths-dec');
+    const bathsIncBtn       = document.getElementById('baths-inc');
 
-    // Comparison
+    // Comparison storage state
     let compareList = [];
     try {
         const stored = localStorage.getItem('compareList');
@@ -49,6 +50,19 @@
     } catch (_) { compareList = []; }
 
     let currentPrediction = null;
+
+    // ====================================================================
+    // GLOBAL LOADER INTERFACE
+    // ====================================================================
+    function triggerGlobalLoader(show, text = 'Processing request...') {
+        if (typeof window.showLoader === 'function' && typeof window.hideLoader === 'function') {
+            if (show) {
+                window.showLoader(text);
+            } else {
+                window.hideLoader();
+            }
+        }
+    }
 
     // ====================================================================
     // TOAST NOTIFICATION SYSTEM
@@ -74,16 +88,8 @@
     }
 
     // ====================================================================
-    // NUMERIC STEPPER UTILITY
+    // NUMERIC STEPPER UTILITY (Touch & Keyboard Supported)
     // ====================================================================
-
-    /**
-     * Bind a decrement button, increment button, and a number input together.
-     * @param {HTMLInputElement} input - The number input element
-     * @param {HTMLButtonElement} decBtn - The minus button
-     * @param {HTMLButtonElement} incBtn - The plus button
-     * @param {number} step - How much to increment/decrement per click
-     */
     function bindStepper(input, decBtn, incBtn, step) {
         if (!input) return;
 
@@ -103,7 +109,7 @@
             input.dispatchEvent(new Event('input', { bubbles: true }));
             updateBtnStates();
 
-            // Visual pulse on the input
+            // Visual pulse on input element
             input.classList.add('stepper-pulse');
             input.addEventListener('animationend', () => {
                 input.classList.remove('stepper-pulse');
@@ -111,12 +117,14 @@
         }
 
         if (decBtn) {
-            decBtn.addEventListener('click', () => nudge(-step));
-            decBtn.addEventListener('mousedown', (e) => e.preventDefault()); // prevent focus steal
+            decBtn.addEventListener('click', (e) => { e.preventDefault(); nudge(-step); });
+            decBtn.addEventListener('touchstart', (e) => { e.preventDefault(); nudge(-step); }, { passive: false });
+            decBtn.addEventListener('mousedown', (e) => e.preventDefault());
         }
 
         if (incBtn) {
-            incBtn.addEventListener('click', () => nudge(+step));
+            incBtn.addEventListener('click', (e) => { e.preventDefault(); nudge(+step); });
+            incBtn.addEventListener('touchstart', (e) => { e.preventDefault(); nudge(+step); }, { passive: false });
             incBtn.addEventListener('mousedown', (e) => e.preventDefault());
         }
 
@@ -141,12 +149,10 @@
         });
 
         input.addEventListener('input', updateBtnStates);
-
-        // Initial state
         updateBtnStates();
     }
 
-    // Bind the three steppers
+    // Bind all form steppers
     bindStepper(areaInput,      areaDecBtn,  areaIncBtn,  50);   // area: ±50 sq.ft
     bindStepper(bedroomsInput,  bedsDecBtn,  bedsIncBtn,  1);    // bedrooms: ±1
     bindStepper(bathroomsInput, bathsDecBtn, bathsIncBtn, 1);    // bathrooms: ±1
@@ -169,7 +175,7 @@
     }
 
     // ====================================================================
-    // STEP DOTS — activate as user interacts with each step
+    // STEP DOTS & PROGRESS
     // ====================================================================
     const stepDots = document.querySelectorAll('.step-dot');
 
@@ -179,7 +185,6 @@
         });
     }
 
-    // Wire up focus events to illuminate step dots progressively
     const stepIds = ['location', 'area', 'bedrooms', 'bathrooms', 'balcony-yes', 'submit-btn'];
     stepIds.forEach((id, i) => {
         const el = document.getElementById(id);
@@ -249,7 +254,7 @@
         function update(now) {
             const elapsed  = now - startTime;
             const progress = Math.min(elapsed / duration, 1);
-            const eased    = 1 - Math.pow(1 - progress, 4); // ease-out quartic
+            const eased    = 1 - Math.pow(1 - progress, 4);
             const current  = target * eased;
 
             if (targetText.includes('Cr')) {
@@ -329,28 +334,23 @@
             </div>
         `;
 
-        // Store for comparison
         currentPrediction = data;
 
-        // Animate price counter
         const animEl = document.getElementById('result-animated');
         if (animEl) animateCounter(animEl, formatted_price);
 
-        // Smooth-scroll to result
         resultContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
-        // Wire up "Add to Compare" button
         const compareBtn = document.getElementById('btn-add-compare');
         if (compareBtn) {
             compareBtn.addEventListener('click', () => addToCompare(currentPrediction));
         }
 
-        // Light up all step dots
         activateStepDot(5);
     }
 
     // ====================================================================
-    // COMPARISON LOGIC (localStorage-based)
+    // COMPARISON LOGIC
     // ====================================================================
     function saveCompareList() {
         localStorage.setItem('compareList', JSON.stringify(compareList));
@@ -372,14 +372,12 @@
         showToast('Property added to comparison list! Visit the Compare page.', 'success');
     }
 
-    // Expose globally for inline handler and compare.html
-    window.addToCompare    = addToCompare;
+    window.addToCompare = addToCompare;
     window.removeFromCompare = function (id) {
         compareList = compareList.filter(item => item.id !== id);
         saveCompareList();
     };
 
-    // Cross-tab sync
     window.addEventListener('storage', (e) => {
         if (e.key === 'compareList') {
             try {
@@ -390,7 +388,7 @@
     });
 
     // ====================================================================
-    // LOADING STATE
+    // BUTTON LOADING STATE CONTROL
     // ====================================================================
     function setLoading(isLoading) {
         if (!submitBtn) return;
@@ -402,7 +400,7 @@
     }
 
     // ====================================================================
-    // FORM SUBMISSION — AJAX (fetch + JSON API)
+    // FORM SUBMISSION — AJAX + PRG STATE CLEANUP
     // ====================================================================
     if (predictionForm) {
         predictionForm.addEventListener('submit', async function (e) {
@@ -410,22 +408,28 @@
 
             if (!validateForm()) return;
 
-            // Read balcony (radio group — default to 'no' if nothing checked)
             const balconyChecked = predictionForm.querySelector('input[name="balcony"]:checked');
             const balcony = balconyChecked ? balconyChecked.value : 'no';
 
+            // Use optional chaining on every input read so a missing DOM element
+            // never crashes the payload build before the fetch even starts.
             const formData = {
-                area:      parseFloat(areaInput.value),
-                bedrooms:  parseInt(bedroomsInput.value, 10),
-                bathrooms: parseInt(bathroomsInput.value, 10),
-                location:  locationInput.value.trim(),
-                balcony                               // included for extensibility
+                area:      parseFloat(areaInput?.value      ?? 0),
+                bedrooms:  parseInt(bedroomsInput?.value   ?? 1, 10),
+                bathrooms: parseInt(bathroomsInput?.value  ?? 1, 10),
+                location:  (locationInput?.value ?? '').trim(),
+                balcony
             };
 
             setLoading(true);
+            triggerGlobalLoader(true, 'Running ML valuation model...');
 
             try {
-                const response = await fetch('/api/predict', {
+                // Always target Flask directly so the request succeeds whether the
+                // frontend is served by Flask itself (port 5000) or VS Code Live
+                // Server (port 5500) or opened as a file:// URL.
+                const FLASK_API = 'http://127.0.0.1:5000';
+                const response = await fetch(`${FLASK_API}/api/predict`, {
                     method:  'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body:    JSON.stringify(formData)
@@ -434,11 +438,31 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    // Attach balcony to inputs so result card can display it
-                    data.inputs.balcony = balcony;
+                    // The API response spreads predict_price() which uses the key
+                    // "inputs_used" — NOT "inputs". Guard with ?. so a missing key
+                    // never crashes before the result card is rendered.
+                    if (data.inputs_used) {
+                        data.inputs_used.balcony = balcony;
+                    }
+
+                    // Build a normalised inputs object the result card always expects
+                    // (location, area, bedrooms, bathrooms, balcony).
+                    data.inputs = {
+                        location:  data.inputs_used?.city       ?? formData.location,
+                        area:      data.inputs_used?.size_in_sqft ?? formData.area,
+                        bedrooms:  data.inputs_used?.bhk          ?? formData.bedrooms,
+                        bathrooms: formData.bathrooms,
+                        balcony,
+                    };
+
                     renderResult(data);
 
-                    if (data.fallback_used) {
+                    // Prevent form re-submission on refresh (PRG pattern for AJAX history)
+                    if (window.history && window.history.replaceState) {
+                        window.history.replaceState(null, null, window.location.pathname);
+                    }
+
+                    if (data.prediction_source === 'state_tier_fallback') {
                         showToast(
                             `"${formData.location}" not in training dataset. ` +
                             'Using an intelligent baseline estimate.',
@@ -453,16 +477,27 @@
                 }
 
             } catch (err) {
-                console.error('[Predictor] Fetch error:', err);
-                showToast('Network error. Please check your connection and try again.', 'error');
+                console.error('[Predictor] Fetch/JS error:', err);
+                // Distinguish a network failure (Flask not running) from a JS
+                // runtime crash so the toast message is actually actionable.
+                let msg;
+                if (err instanceof TypeError && err.message.toLowerCase().includes('fetch')) {
+                    msg = 'Cannot reach the Flask server at port 5000. Make sure app.py is running.';
+                } else if (err instanceof SyntaxError) {
+                    msg = `Server returned unexpected data (${err.message}). Check Flask console.`;
+                } else {
+                    msg = err.message || 'An unexpected error occurred.';
+                }
+                showToast(msg, 'error', 7000);
             } finally {
                 setLoading(false);
+                triggerGlobalLoader(false);
             }
         });
     }
 
     // ====================================================================
-    // KEYBOARD SHORTCUT — Ctrl+Enter (or ⌘+Enter on Mac) to submit
+    // KEYBOARD SHORTCUT — Ctrl+Enter (or ⌘+Enter)
     // ====================================================================
     document.addEventListener('keydown', (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -474,13 +509,12 @@
     });
 
     // ====================================================================
-    // STAGGER REVEAL — animate elements on page load
+    // STAGGER REVEAL ON LOAD
     // ====================================================================
     function staggerReveal() {
         const items = document.querySelectorAll('.stagger-item');
         items.forEach((el, i) => {
             el.style.transitionDelay = `${i * 0.07}s`;
-            // Use rAF to let styles paint before toggling
             requestAnimationFrame(() => {
                 requestAnimationFrame(() => {
                     el.classList.add('revealed');
@@ -492,7 +526,7 @@
     staggerReveal();
 
     // ====================================================================
-    // FOCUS ANIMATION — subtle glow on form group focus
+    // FOCUS HIGHLIGHTS
     // ====================================================================
     document.querySelectorAll('.form-step').forEach(step => {
         const focusables = step.querySelectorAll('input, button, select, textarea');

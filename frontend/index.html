@@ -17,8 +17,58 @@
 
     <!-- Main CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+    <!-- Loader Inline Styles for Zero-Flicker Initial Render -->
+    <style>
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 99999;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        .loading-overlay.hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+        .spinner-ring {
+            width: 56px;
+            height: 56px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top-color: #06b6d4;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        .loader-text {
+            margin-top: 16px;
+            color: #f8fafc;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 500;
+            letter-spacing: 0.03em;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
 </head>
 <body>
+
+    <!-- Full-screen Centered Loading Overlay (Page Load & Backend Operations) -->
+    <div id="global-loader" class="loading-overlay">
+        <div class="spinner-ring" aria-hidden="true"></div>
+        <div class="loader-text" id="loader-text">Loading application...</div>
+    </div>
 
     <!-- Animated background grid overlay -->
     <div class="bg-grid" aria-hidden="true"></div>
@@ -167,11 +217,10 @@
                 </div>
             </div>
 
+            <!-- Form utilizing POST-Redirect-GET or AJAX handling -->
             <form action="/predict" method="POST" id="prediction-form" novalidate>
 
-                <!-- ==================================================
-                     STEP 1: Map / Address Selection
-                     ================================================== -->
+                <!-- STEP 1: Map / Address Selection -->
                 <div class="form-step" id="step-1">
                     <div class="step-label">
                         <span class="step-num" aria-label="Step 1">1</span>
@@ -223,9 +272,7 @@
                 <!-- Divider -->
                 <div class="step-divider" aria-hidden="true"></div>
 
-                <!-- ==================================================
-                     STEP 2: Total Area
-                     ================================================== -->
+                <!-- STEP 2: Total Area -->
                 <div class="form-step" id="step-2">
                     <div class="step-label">
                         <span class="step-num" aria-label="Step 2">2</span>
@@ -264,9 +311,7 @@
                 <!-- Divider -->
                 <div class="step-divider" aria-hidden="true"></div>
 
-                <!-- ==================================================
-                     STEP 3: Bedrooms
-                     ================================================== -->
+                <!-- STEP 3: Bedrooms -->
                 <div class="form-step" id="step-3">
                     <div class="step-label">
                         <span class="step-num" aria-label="Step 3">3</span>
@@ -304,9 +349,7 @@
                 <!-- Divider -->
                 <div class="step-divider" aria-hidden="true"></div>
 
-                <!-- ==================================================
-                     STEP 4: Bathrooms
-                     ================================================== -->
+                <!-- STEP 4: Bathrooms -->
                 <div class="form-step" id="step-4">
                     <div class="step-label">
                         <span class="step-num" aria-label="Step 4">4</span>
@@ -344,9 +387,7 @@
                 <!-- Divider -->
                 <div class="step-divider" aria-hidden="true"></div>
 
-                <!-- ==================================================
-                     STEP 5: Balcony
-                     ================================================== -->
+                <!-- STEP 5: Balcony -->
                 <div class="form-step" id="step-5">
                     <div class="step-label">
                         <span class="step-num" aria-label="Step 5">5</span>
@@ -374,9 +415,7 @@
                 <!-- Divider -->
                 <div class="step-divider" aria-hidden="true"></div>
 
-                <!-- ==================================================
-                     STEP 6: Predict Button
-                     ================================================== -->
+                <!-- STEP 6: Predict Button -->
                 <div class="form-step form-step-submit" id="step-6">
                     <div class="step-label">
                         <span class="step-num step-num-final" aria-label="Step 6">6</span>
@@ -400,7 +439,7 @@
         <!-- /form-card -->
 
         <!-- ============================================================
-             RESULT CONTAINER (populated by AJAX in script.js)
+             RESULT CONTAINER
              ============================================================ -->
         <div id="result-container" class="stagger-item" aria-live="polite" aria-label="Prediction result"></div>
 
@@ -455,12 +494,38 @@
     <!-- Main script -->
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 
-    <!-- Leaflet Map Initialization and Reverse Geocoding -->
+    <!-- App Initialization, Loading Control, and Leaflet Map Script -->
     <script>
     (function () {
         'use strict';
 
+        const globalLoader = document.getElementById('global-loader');
+        const loaderText = document.getElementById('loader-text');
+
+        // Helper functions for showing/hiding global loading overlay
+        window.showLoader = function (message) {
+            if (loaderText && message) loaderText.textContent = message;
+            if (globalLoader) globalLoader.classList.remove('hidden');
+        };
+
+        window.hideLoader = function () {
+            if (globalLoader) globalLoader.classList.add('hidden');
+        };
+
+        // Hide loading icon once whole page resources finish loading
+        window.addEventListener('load', function () {
+            hideLoader();
+        });
+
         document.addEventListener('DOMContentLoaded', function () {
+
+            // Intercept standard form submission for backend processing and loader visual feedback
+            const form = document.getElementById('prediction-form');
+            if (form) {
+                form.addEventListener('submit', function () {
+                    showLoader('Running ML valuation model...');
+                });
+            }
 
             // --- Topbar scroll shadow ---
             const topbar = document.getElementById('topbar');
@@ -496,7 +561,7 @@
                 requestAnimationFrame(update);
             }
 
-            // --- Leaflet map ---
+            // --- Leaflet map setup ---
             var map = L.map('map', {
                 center: [20.5937, 78.9629],
                 zoom: 5,
@@ -504,10 +569,9 @@
                 scrollWheelZoom: true
             });
 
-            // Dark CartoDB tile layer
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-                subdomains: 'abcd',
+            // OpenStreetMap tile layer (Free, no API key required)
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
                 maxZoom: 19
             }).addTo(map);
 
@@ -527,7 +591,6 @@
                 var lat = e.latlng.lat;
                 var lon = e.latlng.lng;
 
-                // Hide the hint overlay
                 if (mapHint) mapHint.style.display = 'none';
 
                 if (marker) {
@@ -559,7 +622,7 @@
                     });
             });
 
-            // Clear location button
+            // Clear location button handler
             var clearBtn = document.getElementById('location-clear');
             if (clearBtn && locationInput) {
                 clearBtn.addEventListener('click', function () {
@@ -578,6 +641,5 @@
         });
     })();
     </script>
-
 </body>
 </html>

@@ -1,6 +1,11 @@
 flask
+flask-cors
 pandas
 numpy
-scikit-learn
+scikit-learn>=1.3
 joblib
 pymongo
+lightgbm
+xgboost
+optuna
+category_encoders
